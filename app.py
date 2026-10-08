@@ -76,6 +76,8 @@ html, body, [class*="css"], .stApp, .stMarkdown, p, li, label, input, button, h1
 [data-testid="stMarkdownContainer"] ul, [data-testid="stMarkdownContainer"] ol{ padding-right:1.3rem; padding-left:0; }
 div[data-baseweb="select"] > div, .stNumberInput input{ direction:rtl; text-align:right; }
 [data-testid="stSlider"] { direction:ltr; }            /* sliders stay LTR so min→max reads naturally */
+[data-testid="stSliderThumbValue"], [data-testid="stSliderTickBar"] > *{ unicode-bidi:plaintext; white-space:nowrap; }  /* "3 – סביר" keeps its natural order */
+[data-testid="stElementContainer"]:has(#ra-ltr-locale){ display:none; }   /* locale-fix script takes no space */
 [data-testid="stVegaLiteChart"], .vega-embed{ direction:ltr; }   /* canvas charts: RTL flips label alignment */
 [data-testid="stSlider"] label, [data-testid="stWidgetLabel"]{ direction:rtl; text-align:right; width:100%; }
 [data-testid="stWidgetLabel"] p{ font-weight:600; color:var(--ink); }
@@ -148,6 +150,39 @@ div[data-baseweb="select"] > div, .stNumberInput input{ direction:rtl; text-alig
 </style>
 """)
 
+# Streamlit's sliders (React Aria) take their direction from the *browser locale*, not from CSS.
+# In a Hebrew browser (he-IL) the thumb is mirrored while the filled track and min/max labels are not,
+# so the thumb shows the wrong position. Pin the locale React Aria sees to en-US: sliders stay a
+# consistent LTR number line (min on the left) for every visitor; the page itself stays RTL via CSS.
+st.html("""
+<span id="ra-ltr-locale"></span>
+<script>
+(() => {
+  if (window.__raLtrLocale) return;            // install once per page, not on every rerun
+  window.__raLtrLocale = true;
+  try {
+    if (navigator.language === "en-US") return;
+    Object.defineProperty(navigator, "language", { configurable: true, get: () => "en-US" });
+    // React Aria re-reads the locale on "languagechange", but only listens while a slider is mounted,
+    // so fire it whenever sliders appear (they mount after this script runs, and again on tab switches).
+    let queued = false;
+    const notify = () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; window.dispatchEvent(new Event("languagechange")); });
+    };
+    const seen = new WeakSet();                // only react to sliders we have not handled yet
+    new MutationObserver(() => {
+      for (const s of document.querySelectorAll('[data-testid="stSlider"]')) {
+        if (!seen.has(s)) { seen.add(s); notify(); }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+    notify();
+  } catch (e) { /* non-critical: sliders still work, only the thumb would be mirrored */ }
+})();
+</script>
+""", unsafe_allow_javascript=True)
+
 
 # --------------------------------------------------------------------------- #
 # Model (trained once and cached)
@@ -161,6 +196,27 @@ bundle = get_model()
 m = bundle.metrics
 t = m["test"]
 data = bundle.data
+
+
+# Input bounds come from the actual data, rounded outward to the input step
+def data_range(col: str, step: int = 1) -> tuple[int, int]:
+    lo, hi = data[col].min(), data[col].max()
+    return int(lo // step * step), int(-(-hi // step) * step)
+
+
+RANGE = {
+    "sqft_living": data_range("sqft_living", 50), "sqft_basement": data_range("sqft_basement", 50),
+    "bedrooms": data_range("bedrooms"), "bathrooms": data_range("bathrooms"),
+    "floors": data_range("floors"), "yr_built": data_range("yr_built"),
+}
+# Lot size is extremely skewed (median 8,000 vs. max 1.65M sq ft), so a linear slider is unusable:
+# use a graded ladder that is dense where most lots are and still reaches the largest lot in the data.
+_lot_lo, _lot_hi = data_range("sqft_lot", 50)
+LOT_OPTIONS = sorted({_lot_lo, _lot_hi, SAMPLE_HOUSE["sqft_lot"], *(
+    v for v in (1_000, 1_500, 2_000, 2_500, 3_000, 4_000, 5_000, 6_000, 7_000, 8_000, 9_000, 10_000,
+                12_000, 15_000, 20_000, 25_000, 30_000, 40_000, 50_000, 75_000, 100_000, 150_000,
+                200_000, 300_000, 500_000, 750_000, 1_000_000) if _lot_lo < v < _lot_hi)})
+MAX_BASEMENT_SHARE = float(np.ceil((data["sqft_basement"] / data["sqft_living"]).max() * 20) / 20)
 
 # --------------------------------------------------------------------------- #
 # Hero
@@ -190,19 +246,23 @@ with tab_value:
     with form_col:
         st.markdown('<div class="section-title">📝 מאפייני הנכס</div>', unsafe_allow_html=True)
         with st.container(border=True):
-            sqft_living = st.slider("שטח מגורים (רגל רבוע)", 400, 6000, SAMPLE_HOUSE["sqft_living"], 50,
-                                    help="1 רגל רבוע ≈ 0.093 מ\"ר")
+            sqft_living = st.slider("שטח מגורים (רגל רבוע)", RANGE["sqft_living"][0], RANGE["sqft_living"][1],
+                                    SAMPLE_HOUSE["sqft_living"], 50, help="1 רגל רבוע ≈ 0.093 מ\"ר")
             st.caption(f"≈ {sqft_living * 0.0929:,.0f} מ\"ר")
             c1, c2 = st.columns(2)
             with c1:
-                bedrooms = st.number_input("חדרי שינה", 1, 8, SAMPLE_HOUSE["bedrooms"])
-                floors = st.selectbox("מספר קומות", [1, 2, 3], index=SAMPLE_HOUSE["floors"] - 1)
+                bedrooms = st.number_input("חדרי שינה", *RANGE["bedrooms"], SAMPLE_HOUSE["bedrooms"], 1)
+                floors = st.selectbox("מספר קומות", list(range(RANGE["floors"][0], RANGE["floors"][1] + 1)),
+                                      index=SAMPLE_HOUSE["floors"] - RANGE["floors"][0])
             with c2:
-                bathrooms = st.number_input("חדרי רחצה", 1, 6, SAMPLE_HOUSE["bathrooms"])
-                yr_built = st.number_input("שנת בנייה", 1900, REFERENCE_YEAR, SAMPLE_HOUSE["yr_built"])
-            sqft_basement = st.slider("מתוכו – שטח מרתף (רגל רבוע)", 0, 2500,
-                                      SAMPLE_HOUSE["sqft_basement"], 50)
-            sqft_lot = st.slider("שטח מגרש (רגל רבוע)", 500, 100000, SAMPLE_HOUSE["sqft_lot"], 500)
+                bathrooms = st.number_input("חדרי רחצה", *RANGE["bathrooms"], SAMPLE_HOUSE["bathrooms"], 1)
+                yr_built = st.number_input("שנת בנייה", *RANGE["yr_built"], SAMPLE_HOUSE["yr_built"], 1)
+            sqft_basement = st.slider("מתוכו – שטח מרתף (רגל רבוע)", *RANGE["sqft_basement"],
+                                      SAMPLE_HOUSE["sqft_basement"], 50,
+                                      help="חלק משטח המגורים שנמצא מתחת לקרקע (0 = ללא מרתף)")
+            sqft_lot = st.select_slider("שטח מגרש (רגל רבוע)", options=LOT_OPTIONS, value=SAMPLE_HOUSE["sqft_lot"],
+                                        format_func=lambda v: f"{v:,}",
+                                        help="סקאלה מדורגת: צפופה במגרשים נפוצים, ומגיעה עד המגרש הגדול במאגר")
             condition = st.select_slider("מצב הנכס", options=list(CONDITION_HE),
                                          value=SAMPLE_HOUSE["condition"], format_func=CONDITION_HE.get)
             view = st.select_slider("איכות הנוף", options=list(VIEW_HE),
@@ -210,9 +270,12 @@ with tab_value:
             waterfront = st.toggle("🌊 נכס עם חזית למים (ים / אגם)", value=False)
             st.button("💰 חשב הערכת שווי", type="primary", width="stretch")
 
-        if sqft_basement >= sqft_living:
-            st.warning("שטח המרתף אינו יכול להיות גדול משטח המגורים הכולל – הוגבל אוטומטית.")
-            sqft_basement = int(sqft_living * 0.5)
+        # In the data the basement never exceeds ~57% of the living area (sqft_living = above + basement)
+        max_basement = int(sqft_living * MAX_BASEMENT_SHARE // 50 * 50)
+        if sqft_basement > max_basement:
+            st.warning(f"שטח המרתף ({sqft_basement:,} ר\"ר) גדול מדי ביחס לשטח המגורים. במאגר, המרתף אינו עולה על "
+                       f"כ-{MAX_BASEMENT_SHARE:.0%} מהשטח – החישוב בוצע עם {max_basement:,} ר\"ר.")
+            sqft_basement = max_basement
 
     house = {
         "bedrooms": bedrooms, "bathrooms": bathrooms, "sqft_living": sqft_living, "sqft_lot": sqft_lot,
