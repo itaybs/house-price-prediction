@@ -465,6 +465,6 @@ with tab_model:
 html("""
 <div class="footer">
   <div><b>פורטל הערכת שווי נכסים</b> · <span class="ltr">Linear Regression · Scikit-learn · Streamlit</span></div>
-  <div style="margin-top:.35rem;">© כל הזכויות שמורות לאיתי בסטקר</div>
+  <div dir="rtl" style="margin-top:.35rem; direction:rtl; unicode-bidi:isolate;">© כל הזכויות שמורות לאיתי בסטקר</div>
 </div>
 """)
