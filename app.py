@@ -44,8 +44,9 @@ def usd_range(low: float, high: float) -> str:
     return f"{LRI}${low:,.0f} – ${high:,.0f}{PDI}"
 
 
-def signed_usd(v: float) -> str:
-    return f"{LRI}{'+' if v >= 0 else '−'}${abs(v):,.0f}{PDI}"
+def signed_usd(v: float, cents: bool = False) -> str:
+    amount = f"{abs(v):,.2f}" if cents else f"{abs(v):,.0f}"
+    return f"{LRI}{'+' if v >= 0 else '−'}${amount}{PDI}"
 
 
 def html(markup: str) -> None:
@@ -75,6 +76,7 @@ html, body, [class*="css"], .stApp, .stMarkdown, p, li, label, input, button, h1
 [data-testid="stMarkdownContainer"] ul, [data-testid="stMarkdownContainer"] ol{ padding-right:1.3rem; padding-left:0; }
 div[data-baseweb="select"] > div, .stNumberInput input{ direction:rtl; text-align:right; }
 [data-testid="stSlider"] { direction:ltr; }            /* sliders stay LTR so min→max reads naturally */
+[data-testid="stVegaLiteChart"], .vega-embed{ direction:ltr; }   /* canvas charts: RTL flips label alignment */
 [data-testid="stSlider"] label, [data-testid="stWidgetLabel"]{ direction:rtl; text-align:right; width:100%; }
 [data-testid="stWidgetLabel"] p{ font-weight:600; color:var(--ink); }
 .stTabs [data-baseweb="tab-list"]{ gap:.4rem; direction:rtl; background:#fff; padding:.35rem; border-radius:14px; box-shadow:var(--shadow); }
@@ -262,17 +264,19 @@ with tab_value:
             cdf = pd.DataFrame({"מאפיין": [FEATURE_HE.get(k, k) for k in contrib.index],
                                 "תרומה": contrib.values})
             cdf["כיוון"] = np.where(cdf["תרומה"] >= 0, "מעלה מחיר", "מוריד מחיר")
-            chart = (alt.Chart(cdf).mark_bar(cornerRadius=6, height=18)
+            chart = (alt.Chart(cdf).mark_bar(cornerRadius=5)
                      .encode(x=alt.X("תרומה:Q", title="תרומה למחיר ביחס לבית ממוצע ($)",
                                      axis=alt.Axis(format="$,.0f")),
-                             y=alt.Y("מאפיין:N", sort=None, title=None, axis=alt.Axis(orient="right")),
+                             y=alt.Y("מאפיין:N", sort=None, title=None, scale=alt.Scale(paddingInner=0.35), axis=alt.Axis(orient="right", labelOverlap=False, labelLimit=220, labelFontSize=12)),
                              color=alt.Color("כיוון:N", scale=alt.Scale(domain=["מעלה מחיר", "מוריד מחיר"],
                                                                         range=["#0a8f5a", "#d64545"]),
-                                             legend=alt.Legend(orient="top", title=None)),
+                                             legend=None),
                              tooltip=["מאפיין", alt.Tooltip("תרומה:Q", format="$,.0f")])
                      .properties(height=330))
             with st.container(border=True):
                 st.markdown("**📊 מה מזיז את המחיר? – פירוק התחזית לפי מאפיינים**")
+                html('<div style="font-size:.88rem;color:#5f6b7a;"><span style="color:#0a8f5a;">■</span> מעלה מחיר'
+                     ' &nbsp; <span style="color:#d64545;">■</span> מוריד מחיר</div>')
                 st.altair_chart(chart, width="stretch")
 
     # ------------------------------------------------------------------- #
@@ -311,7 +315,7 @@ with tab_value:
             bullets.append("<b>ללא נוף מיוחד.</b> בדומה לרוב הנכסים במאגר (כ-90%), אין כאן פרמיית נוף.")
         bullets.append(
             f"<b>חדרי שינה מול שטח.</b> בהינתן שטח קבוע, המקדם של חדרי שינה שלילי "
-            f"(<span class='ltr'>{usd(coefs['bedrooms'])}</span> לחדר): יותר חדרים באותו שטח = חדרים קטנים וצפופים יותר. "
+            f"(<span class='ltr'>{signed_usd(coefs['bedrooms'])}</span> לחדר): יותר חדרים באותו שטח = חדרים קטנים וצפופים יותר. "
             f"לעומת זאת חדר רחצה נוסף מוסיף כ-<span class='ltr'>{usd(coefs['bathrooms'])}</span> – סממן של רמת גימור ונוחות.")
         bullets.append(
             f"<b>גיל ומצב.</b> בית בן {REFERENCE_YEAR - yr_built} שנים. במאגר זה, בתים ותיקים נמצאים לרוב בשכונות ותיקות "
@@ -407,8 +411,8 @@ with tab_model:
         avp = pd.DataFrame({"מחיר בפועל": bundle.y_test, "מחיר חזוי": bundle.y_pred_test})
         lim = float(max(avp.max()))
         pts = (alt.Chart(avp).mark_circle(size=38, opacity=.45, color="#006aff")
-               .encode(x=alt.X("מחיר בפועל:Q", axis=alt.Axis(format="$,.0s")),
-                       y=alt.Y("מחיר חזוי:Q", axis=alt.Axis(format="$,.0s")),
+               .encode(x=alt.X("מחיר בפועל:Q", axis=alt.Axis(format="$.2~s")),
+                       y=alt.Y("מחיר חזוי:Q", axis=alt.Axis(format="$.2~s")),
                        tooltip=[alt.Tooltip("מחיר בפועל:Q", format="$,.0f"),
                                 alt.Tooltip("מחיר חזוי:Q", format="$,.0f")]))
         line = (alt.Chart(pd.DataFrame({"x": [0, lim], "y": [0, lim]}))
@@ -424,24 +428,26 @@ with tab_model:
     coefs["כיוון"] = np.where(coefs["coef_std"] >= 0, "השפעה חיובית", "השפעה שלילית")
     cc1, cc2 = st.columns([6, 5], gap="large")
     with cc1:
-        imp = (alt.Chart(coefs).mark_bar(cornerRadius=6, height=16)
+        imp = (alt.Chart(coefs).mark_bar(cornerRadius=5)
                .encode(x=alt.X("coef_std:Q", title="מקדם מתוקנן ($ לסטיית תקן אחת)", axis=alt.Axis(format="$,.0f")),
-                       y=alt.Y("מאפיין:N", sort=None, title=None, axis=alt.Axis(orient="right")),
+                       y=alt.Y("מאפיין:N", sort=None, title=None, scale=alt.Scale(paddingInner=0.35), axis=alt.Axis(orient="right", labelOverlap=False, labelLimit=220, labelFontSize=12)),
                        color=alt.Color("כיוון:N", scale=alt.Scale(domain=["השפעה חיובית", "השפעה שלילית"],
                                                                   range=["#006aff", "#d64545"]),
-                                       legend=alt.Legend(orient="top", title=None)),
+                                       legend=None),
                        tooltip=["מאפיין", alt.Tooltip("coef_std:Q", format="$,.0f", title="מתוקנן"),
                                 alt.Tooltip("coef_real:Q", format="$,.1f", title="ליחידה")])
                .properties(height=420))
         with st.container(border=True):
             st.markdown("**המקדמים המתוקננים** (אחרי <span class='ltr'>StandardScaler</span>) מאפשרים השוואה הוגנת בין מאפיינים "
                         "ביחידות שונות – ככל שהעמודה ארוכה יותר, המאפיין משפיע יותר.", unsafe_allow_html=True)
+            html('<div style="font-size:.88rem;color:#5f6b7a;"><span style="color:#006aff;">■</span> השפעה חיובית'
+                 ' &nbsp; <span style="color:#d64545;">■</span> השפעה שלילית</div>')
             st.altair_chart(imp, width="stretch")
     with cc2:
         rows = "".join(
             f"<div class='factor'><div><div class='n'>{FEATURE_HE.get(f, f)}</div>"
             f"<div class='d'>{UNIT_HE.get(f, 'ביחס לקטגוריית הבסיס')}</div></div>"
-            f"<div class='amt {'pos' if v >= 0 else 'neg'}'>{signed_usd(v)}</div></div>"
+            f"<div class='amt {'pos' if v >= 0 else 'neg'}'>{signed_usd(v, cents=abs(v) < 10)}</div></div>"
             for f, v in zip(coefs["feature"], coefs["coef_real"]))
         st.markdown(f"<div class='card'><h3>💲 \"מחיר הצל\" של כל מאפיין</h3>{rows}</div>", unsafe_allow_html=True)
 
