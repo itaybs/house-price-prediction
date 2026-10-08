@@ -2,14 +2,14 @@
 
 # 🏡 חיזוי מחירי בתים – House Price Prediction
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://share.streamlit.io/)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://housepricepred-ai.streamlit.app/)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-Linear%20Regression-F7931E?logo=scikitlearn&logoColor=white)
 ![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-lightgrey)
 
 > **חלק א' של מטלת Machine Learning** – בניית מודל **Linear Regression** לחיזוי מחיר בית, הערכתו במדדי **R², RMSE, MAE**, ופריסתו כפורטל הערכת שווי אינטראקטיבי ב-**Streamlit**, בעברית מלאה ובממשק RTL.
 
-> 🔗 **Live Demo:** _הקישור יעודכן לאחר הפריסה ב-Streamlit Community Cloud_ (החליפו את הקישור בתג למעלה).
+> 🔗 **Live Demo:** [housepricepred-ai.streamlit.app](https://housepricepred-ai.streamlit.app/) – האפליקציה פרוסה ב-Streamlit Community Cloud וזמינה לשימוש ישירות מהדפדפן, ללא התקנה.
 
 ---
 
@@ -245,7 +245,7 @@ python train.py --data "path/to/folder"
 streamlit run app.py
 ```
 
-**פריסה ל-Streamlit Community Cloud:** התחברו ל-[share.streamlit.io](https://share.streamlit.io), בחרו את הריפו, קובץ ראשי `app.py` – ועדכנו את תג ה-Live Demo בראש הקובץ.
+**פריסה ל-Streamlit Community Cloud:** האפליקציה פרוסה בכתובת [housepricepred-ai.streamlit.app](https://housepricepred-ai.streamlit.app/) ומתעדכנת אוטומטית בכל `push` לענף `main`. לפריסה עצמאית של עותק משלכם: התחברו ל-[share.streamlit.io](https://share.streamlit.io), בחרו את הריפו וקובץ ראשי `app.py`.
 
 ---
 
