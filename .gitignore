@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+
+# local-only files (dataset copy lives in data/housing_data.csv)
+Project housing data .csv
+prompt.md
